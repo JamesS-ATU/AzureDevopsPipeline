@@ -1,0 +1,62 @@
+trigger:
+- Master
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+
+- task: UseDotNet@2
+  inputs:
+    packageType: sdk
+    version: '9.x'
+
+- task: DotNetCoreCLI@2
+  displayName: Restore
+  inputs:
+    command: restore
+    projects: '**/*.sln'
+
+- task: DotNetCoreCLI@2
+  displayName: Build
+  inputs:
+    command: build
+    projects: '**/*.sln'
+    arguments: '--configuration Release'
+
+- task: DotNetCoreCLI@2
+  displayName: Test with Code Coverage
+  inputs:
+    command: test
+    projects: '**/*Test.csproj'
+    arguments: '--configuration Release --collect:"XPlat Code Coverage"'
+    publishTestResults: true
+
+- task: PublishCodeCoverageResults@2
+  displayName: Publish Code Coverage
+  inputs:
+    summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+
+- task: Docker@2
+  displayName: 'Build and Push Docker Image'
+  inputs:
+    command: 'buildAndPush'
+    containerRegistry: 'eTimeTrialDockerConnection'
+    repository: 'etimetrial-web'
+    Dockerfile: 'Dockerfile'
+    tags: |
+      $(Build.BuildId)
+      latest
+
+- task: CopyFiles@2
+  displayName: Copy Bicep Files
+  inputs:
+    SourceFolder: 'bicep'
+    Contents: '**'
+    TargetFolder: '$(Build.ArtifactStagingDirectory)/bicep'
+
+- task: PublishBuildArtifacts@1
+  displayName: Publish Artifacts
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'

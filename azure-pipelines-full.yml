@@ -1,0 +1,173 @@
+trigger:
+- Master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  azureSubscription: 'Azure subscription 1 (6c6fa6b0-6969-40d9-ba4f-a758b65e8ed1)'
+  subscriptionId: '6c6fa6b0-6969-40d9-ba4f-a758b65e8ed1'
+  resourceGroupName: 'RG-eTimeTrial'
+  location: 'West Europe'
+  webAppName: 'etimetrial-web-999'
+  containerRegistry: 'eTimeTrialDockerConnection'
+  repositoryName: 'etimetrial-web'
+
+
+# ============================================================================
+# CONTINUOUS INTEGRATION
+# ============================================================================
+
+stages:
+- stage: Build
+  displayName: 'Continuous Integration'
+
+  jobs:
+
+    - job: BuildAndTest
+      displayName: 'Build, Test and Package'
+
+      steps:
+
+      - task: UseDotNet@2
+        displayName: 'Install .NET SDK'
+        inputs:
+          packageType: 'sdk'
+          version: '9.x'
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Restore Packages'
+        inputs:
+          command: 'restore'
+          projects: '**/*.sln'
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Build Solution'
+        inputs:
+          command: 'build'
+          projects: '**/*.sln'
+          arguments: '--configuration $(buildConfiguration)'
+
+      - task: DotNetCoreCLI@2
+        displayName: 'Execute Tests'
+        inputs:
+          command: 'test'
+          projects: '**/*Test.csproj'
+          arguments: '--configuration $(buildConfiguration) --collect:"XPlat Code Coverage"'
+          publishTestResults: true
+
+      - task: PublishCodeCoverageResults@2
+        displayName: 'Publish Code Coverage'
+        inputs:
+          summaryFileLocation: '$(Agent.TempDirectory)/**/coverage.cobertura.xml'
+
+      - task: Docker@2
+        displayName: 'Build and Push Docker Image'
+        inputs:
+          command: 'buildAndPush'
+          containerRegistry: '$(containerRegistry)'
+          repository: '$(repositoryName)'
+          Dockerfile: 'Dockerfile'
+          tags: |
+            $(Build.BuildId)
+            latest
+
+      - task: CopyFiles@2
+        displayName: 'Copy Bicep Files'
+        inputs:
+          SourceFolder: 'bicep'
+          Contents: '**'
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/bicep'
+
+      - task: PublishPipelineArtifact@1
+        inputs:
+            targetPath: '$(Build.ArtifactStagingDirectory)'
+            artifact: 'drop'
+# ============================================================================
+# CONTINUOUS DEPLOYMENT
+# ============================================================================
+
+- stage: Deploy
+  displayName: 'Continuous Deployment'
+  dependsOn: Build
+  
+  jobs:
+  - job: DeployToAzure
+    displayName: 'Deploy Infrastructure and Application'
+  
+    steps:
+    - download: current
+      artifact: drop
+    # ------------------------------------------------------------
+    # Stop Application
+    # ------------------------------------------------------------
+    - task: AzureAppServiceManage@0
+      displayName: 'Stop Azure App Service'
+      inputs:
+          azureSubscription: '$(azureSubscription)'
+          Action: 'Stop Azure App Service'
+          WebAppName: '$(webAppName)'
+    # ------------------------------------------------------------
+    # Deploy Infrastructure
+    # ------------------------------------------------------------
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Deploy Infrastructure'
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: '$(azureSubscription)'
+        subscriptionId: '$(subscriptionId)'
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: '$(resourceGroupName)'
+        location: '$(location)'
+        templateLocation: 'Linked artifact'
+        csmFile: '$(Pipeline.Workspace)/drop/bicep/main.bicep'
+        csmParametersFile: '$(Pipeline.Workspace)/drop/bicep/main.parameters.json'
+        deploymentMode: 'Incremental'
+    # ------------------------------------------------------------
+    # Start Application
+    # ------------------------------------------------------------
+
+    - task: AzureAppServiceManage@0
+      displayName: 'Start Azure App Service'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        Action: 'Start Azure App Service'
+        WebAppName: '$(webAppName)'
+
+    # ------------------------------------------------------------
+    # Health Check
+    # ------------------------------------------------------------
+
+    - task: AzureCLI@2
+      displayName: 'Health Check'
+      inputs:
+        azureSubscription: '$(azureSubscription)'
+        scriptType: 'pscore'
+        scriptLocation: 'inlineScript'
+        inlineScript: |
+
+            Start-Sleep -Seconds 30
+            $url = "https://$(webAppName).azurewebsites.net/health"
+            Write-Host "Checking application health..."
+            for ($i = 1; $i -le 18; $i++)
+            {
+                try
+                {
+                    $response = Invoke-WebRequest -Uri $url -UseBasicParsing
+                    $status = $response.StatusCode
+                }
+                catch
+                {
+                    $status = 0
+                }
+                Write-Host "Attempt $i : HTTP $status"
+                if ($status -eq 200)
+                {
+                    Write-Host "Application is healthy"
+                    exit 0
+                }
+                Start-Sleep -Seconds 10
+            }
+            Write-Error "Health check failed"
+            exit 1
