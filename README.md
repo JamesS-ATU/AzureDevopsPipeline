@@ -43,3 +43,17 @@ The Bicep template implement Infrastructure as Code (IaC) by defining Azure reso
 ## Conclusion
 
 This project demonstrates how Azure DevOps can be used to implement as a complete Devops ecosystem for version control, automated testing, Continuous Integration, Continuous Deployment, and Infrastructure as Code into a single without the overhead of multiple different applications for each stage of the pipeline
+
+# Declaration of Artificial Intelligence (AI) Usage
+
+I acknowledge the use of Microsoft Copilot as an assistive tool during the completion of this project. Microsoft Copilot was used to support the development of documentation, improve the structure and presentation of written content, provide explanations of technical concepts, and assist with the review of code syntax related to Azure DevOps, YAML pipelines, Bicep templates, Infrastructure as Code (IaC), and cloud infrastructure deployment.
+
+I confirm that this submission represents my own work and understanding of the technologies, methodologies, and practices employed throughout the project. I accept full responsibility for the accuracy, integrity, and originality of the content presented in this report.
+
+**Purpose of Use:**
+
+- Documentation support and refinement
+- Technical explanations and research assistance
+- Code review and syntax guidance
+- Report structure and formatting suggestions
+- Proofreading and language improvement
